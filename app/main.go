@@ -35,6 +35,7 @@ func main() {
 		os.Exit(-1)
 	}
 
+	fmt.Printf("Response %d\n", resp)
 	conn.Write(resp)
 
 }
@@ -47,6 +48,11 @@ func handleConnection(conn net.Conn) ([]byte, error) {
 	buf := make([]byte, 0, 4096)
 	tmp := make([]byte, 4096)
 
+	/*
+	 * TODO improvements
+	 * read first 4 bytes and then read that number instead of until EOF
+	 * handle tiemout of conn
+	 */
 	for {
 		n, err := conn.Read(tmp)
 		if err != nil {
@@ -57,8 +63,6 @@ func handleConnection(conn net.Conn) ([]byte, error) {
 		}
 		buf = append(buf, tmp[:n]...)
 	}
-
-	fmt.Printf("%d\n", buf)
 
 	// response, message_size (4 bytes), correlation_id (4 bytes)
 	// msg_size hardcoded to 0 now
