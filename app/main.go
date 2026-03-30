@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"net"
 	"os"
 )
@@ -40,40 +39,28 @@ func main() {
 
 }
 
-/*
- * all resp or req msg have a size field of 32bit
- */
 func handleConnection(conn net.Conn) ([]byte, error) {
 
-	buf := make([]byte, 0, 4096)
-	tmp := make([]byte, 4096)
-
-	/*
-	 * TODO improvements
-	 * read first 4 bytes and then read that number instead of until EOF
-	 * handle tiemout of conn
-	 */
-	for {
-		n, err := conn.Read(tmp)
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, err
-		}
-		buf = append(buf, tmp[:n]...)
+	msgHeader := make([]byte, 4)
+	_, err := conn.Read(msgHeader)
+	if err != nil {
+		return nil, err
 	}
 
-	// response, message_size (4 bytes), correlation_id (4 bytes)
-	// msg_size hardcoded to 0 now
+	msgSize := int(binary.BigEndian.Uint32(msgHeader))
+	requestBody := make([]byte, msgSize)
+	_, err = conn.Read(requestBody)
+	if err != nil {
+		return nil, err
+	}
 
 	resp := []byte{0, 0, 0, 0}
 
 	var buff bytes.Buffer
-	correlationId := extractCorrelationId(buf)
+	correlationId := extractCorrelationId(requestBody)
 	fmt.Printf("Correlation ID of the msg: %d \n", correlationId)
 
-	err := binary.Write(&buff, binary.BigEndian, correlationId)
+	err = binary.Write(&buff, binary.BigEndian, correlationId)
 	if err != nil {
 		fmt.Println("Error accepting connection: ", err.Error())
 	}
@@ -85,7 +72,9 @@ func handleConnection(conn net.Conn) ([]byte, error) {
 
 func extractCorrelationId(buf []byte) int32 {
 
-	correlationId := int32(binary.BigEndian.Uint32(buf[8:12]))
+	// hardcoded indexes the first bytes are for request_api_key and request_api_version
+	// correlation id is 4 bytes
+	correlationId := int32(binary.BigEndian.Uint32(buf[4:9]))
 
 	return correlationId
 }
