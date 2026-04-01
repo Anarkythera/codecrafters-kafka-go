@@ -56,6 +56,7 @@ func handleConnection(conn net.Conn) ([]byte, error) {
 	}
 
 	apiVersion := parseAPIVersion(requestBody)
+	responseErrorCode := msgErrorCode(apiVersion)
 
 	resp := []byte{0, 0, 0, 0}
 
@@ -69,7 +70,7 @@ func handleConnection(conn net.Conn) ([]byte, error) {
 		return nil, err
 	}
 
-	err = binary.Write(&buff, binary.BigEndian, apiVersion)
+	err = binary.Write(&buff, binary.BigEndian, responseErrorCode)
 	if err != nil {
 		return nil, err
 	}
@@ -79,14 +80,22 @@ func handleConnection(conn net.Conn) ([]byte, error) {
 	return resp, nil
 }
 
+func msgErrorCode(apiVersion int16) int16 {
+
+	var errorCode int16
+
+	if 0 <= apiVersion && apiVersion <= 4 {
+		errorCode = 0
+	} else {
+		errorCode = 35
+	}
+
+	return errorCode
+}
+
 func parseAPIVersion(requestBody []byte) int16 {
 
 	apiVersion := int16(binary.BigEndian.Uint16(requestBody[2:4]))
-
-	if 0 <= apiVersion && apiVersion <= 4 {
-		apiVersion = 35
-	}
-
 	return apiVersion
 
 }
