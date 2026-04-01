@@ -31,7 +31,7 @@ func main() {
 	resp, err := handleConnection(conn)
 	if err != nil {
 		fmt.Println("Error: ", err.Error())
-		os.Exit(-1)
+		os.Exit(1)
 	}
 
 	fmt.Printf("Response %d\n", resp)
@@ -39,6 +39,7 @@ func main() {
 
 }
 
+// Will only support api versions 0-4
 func handleConnection(conn net.Conn) ([]byte, error) {
 
 	msgHeader := make([]byte, 4)
@@ -54,15 +55,23 @@ func handleConnection(conn net.Conn) ([]byte, error) {
 		return nil, err
 	}
 
+	apiVersion := parseAPIVersion(requestBody)
+
 	resp := []byte{0, 0, 0, 0}
 
 	var buff bytes.Buffer
+
 	correlationId := extractCorrelationId(requestBody)
 	fmt.Printf("Correlation ID of the msg: %d \n", correlationId)
 
 	err = binary.Write(&buff, binary.BigEndian, correlationId)
 	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
+		return nil, err
+	}
+
+	err = binary.Write(&buff, binary.BigEndian, apiVersion)
+	if err != nil {
+		return nil, err
 	}
 
 	resp = append(resp, buff.Bytes()...)
@@ -70,11 +79,23 @@ func handleConnection(conn net.Conn) ([]byte, error) {
 	return resp, nil
 }
 
+func parseAPIVersion(requestBody []byte) int16 {
+
+	apiVersion := int16(binary.BigEndian.Uint16(requestBody[2:4]))
+
+	if 0 <= apiVersion && apiVersion <= 4 {
+		apiVersion = 35
+	}
+
+	return apiVersion
+
+}
+
 func extractCorrelationId(buf []byte) int32 {
 
 	// hardcoded indexes the first bytes are for request_api_key and request_api_version
 	// correlation id is 4 bytes
-	correlationId := int32(binary.BigEndian.Uint32(buf[4:9]))
+	correlationId := int32(binary.BigEndian.Uint32(buf[4:8]))
 
 	return correlationId
 }
