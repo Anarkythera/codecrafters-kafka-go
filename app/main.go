@@ -144,17 +144,7 @@ func createResponseBody(request []byte) ([]byte, error) {
  * Currently hardcoded to 0
  */
 func parseTagBuffer() ([]byte, error) {
-	var buff bytes.Buffer
-	tagBuffer := []byte{}
-	err := binary.Write(&buff, binary.BigEndian, int32(0))
-	if err != nil {
-		return nil, err
-	}
-
-	tagBuffer = append(tagBuffer, buff.Bytes()...)
-
-	return tagBuffer, nil
-
+	return []byte{0}, nil
 }
 
 /*
@@ -182,8 +172,8 @@ func parseAPIKeys(request []byte) ([]byte, error) {
 	var buff bytes.Buffer
 	apiKeys := []byte{}
 
-	//hardcoded for now
-	apiKeysLength := int8(1)
+	//hardcoded for now is always len(apikeys)+1
+	apiKeysLength := int8(2)
 	err := binary.Write(&buff, binary.BigEndian, apiKeysLength)
 	if err != nil {
 		return nil, err
