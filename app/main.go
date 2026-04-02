@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 )
 
 var SERVER_PORT = 9092
@@ -48,36 +49,176 @@ func handleConnection(conn net.Conn) ([]byte, error) {
 		return nil, err
 	}
 
-	msgSize := int(binary.BigEndian.Uint32(msgHeader))
-	requestBody := make([]byte, msgSize)
-	_, err = conn.Read(requestBody)
+	reqSize := int(binary.BigEndian.Uint32(msgHeader))
+	request := make([]byte, reqSize)
+	_, err = conn.Read(request)
 	if err != nil {
 		return nil, err
 	}
 
-	apiVersion := parseAPIVersion(requestBody)
-	responseErrorCode := msgErrorCode(apiVersion)
-
-	resp := []byte{0, 0, 0, 0}
-
-	var buff bytes.Buffer
-
-	correlationId := extractCorrelationId(requestBody)
-	fmt.Printf("Correlation ID of the msg: %d \n", correlationId)
-
-	err = binary.Write(&buff, binary.BigEndian, correlationId)
+	respHeader, err := createResponseHeader(request)
 	if err != nil {
 		return nil, err
 	}
 
-	err = binary.Write(&buff, binary.BigEndian, responseErrorCode)
+	respBody, err := createResponseBody(request)
 	if err != nil {
 		return nil, err
 	}
 
-	resp = append(resp, buff.Bytes()...)
+	var respSize bytes.Buffer
+	err = binary.Write(&respSize, binary.BigEndian, int32(len(respHeader)+len(respBody)))
+	if err != nil {
+		return nil, err
+	}
+
+	resp := slices.Concat(respSize.Bytes(), respHeader, respBody)
 
 	return resp, nil
+}
+
+/*
+ * Correlation ID int32
+ *
+ */
+func createResponseHeader(request []byte) ([]byte, error) {
+
+	var buff bytes.Buffer
+	header := []byte{}
+	correlationId := parseCorrelationId(request)
+
+	fmt.Printf("Correlation ID of the msg: %d \n", correlationId)
+
+	err := binary.Write(&buff, binary.BigEndian, correlationId)
+	if err != nil {
+		return nil, err
+	}
+
+	header = append(header, buff.Bytes()...)
+
+	return header, nil
+}
+
+/*
+ * has the following structure
+ * error_code int16 (0 if successful request)
+ * api_keys array int8 len + 1
+ *   api_key int16
+ *   min_version int16 0
+ *   max_version int16 4
+ *   tag_buffer int8 0
+ * throttle_time_ms int32 0
+ * tag_buffer int8 0
+ *
+ */
+func createResponseBody(request []byte) ([]byte, error) {
+	var buff bytes.Buffer
+
+	apiVersion := parseAPIVersion(request)
+	responseErrorCode := msgErrorCode(apiVersion)
+	err := binary.Write(&buff, binary.BigEndian, responseErrorCode)
+	if err != nil {
+		return nil, err
+	}
+
+	apiKey, err := parseAPIKeys(request)
+	if err != nil {
+		return nil, err
+	}
+
+	trottleTimeMs, err := parseThrottleTimeMs(request)
+	if err != nil {
+		return nil, err
+	}
+
+	tagBuffer, err := parseTagBuffer()
+	if err != nil {
+		return nil, err
+	}
+
+	body := slices.Concat(buff.Bytes(), apiKey, trottleTimeMs, tagBuffer)
+	return body, nil
+}
+
+/*
+ * Currently hardcoded to 0
+ */
+func parseTagBuffer() ([]byte, error) {
+	var buff bytes.Buffer
+	tagBuffer := []byte{}
+	err := binary.Write(&buff, binary.BigEndian, int32(0))
+	if err != nil {
+		return nil, err
+	}
+
+	tagBuffer = append(tagBuffer, buff.Bytes()...)
+
+	return tagBuffer, nil
+
+}
+
+/*
+ * Currently hardcoded to 0
+ */
+func parseThrottleTimeMs(request []byte) ([]byte, error) {
+	var buff bytes.Buffer
+	throttleTimeMs := []byte{}
+	err := binary.Write(&buff, binary.BigEndian, int32(0))
+	if err != nil {
+		return nil, err
+	}
+
+	throttleTimeMs = append(throttleTimeMs, buff.Bytes()...)
+
+	return throttleTimeMs, nil
+
+}
+
+/*
+ * Min version is 0
+ * Max version is 4
+ */
+func parseAPIKeys(request []byte) ([]byte, error) {
+	var buff bytes.Buffer
+	apiKeys := []byte{}
+
+	//hardcoded for now
+	apiKeysLength := int8(1)
+	err := binary.Write(&buff, binary.BigEndian, apiKeysLength)
+	if err != nil {
+		return nil, err
+	}
+
+	apiKey := int16(18)
+	err = binary.Write(&buff, binary.BigEndian, apiKey)
+	if err != nil {
+		return nil, err
+	}
+
+	minVersion := int16(0)
+	err = binary.Write(&buff, binary.BigEndian, minVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	maxVersion := int16(4)
+	err = binary.Write(&buff, binary.BigEndian, maxVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	tagBuffer, err := parseTagBuffer()
+	if err != nil {
+		return nil, err
+	}
+
+	err = binary.Write(&buff, binary.BigEndian, tagBuffer)
+	if err != nil {
+		return nil, err
+	}
+
+	apiKeys = append(apiKeys, buff.Bytes()...)
+	return apiKeys, nil
 }
 
 func msgErrorCode(apiVersion int16) int16 {
@@ -100,7 +241,7 @@ func parseAPIVersion(requestBody []byte) int16 {
 
 }
 
-func extractCorrelationId(buf []byte) int32 {
+func parseCorrelationId(buf []byte) int32 {
 
 	// hardcoded indexes the first bytes are for request_api_key and request_api_version
 	// correlation id is 4 bytes
